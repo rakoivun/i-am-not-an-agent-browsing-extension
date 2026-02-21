@@ -3,7 +3,7 @@
   "name": "Browser Relay",
   "version": "0.1.0",
   "description": "Relay bridge for LLM-orchestrated browser automation",
-  "permissions": ["activeTab", "tabs", "scripting"],
+  "permissions": ["activeTab", "tabs", "scripting", "alarms", "declarativeNetRequest"],
   "host_permissions": [
     "http://localhost:18321/*",
     "<all_urls>"
@@ -16,7 +16,22 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["stealth.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "brand_headers",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "icons": {}
 }

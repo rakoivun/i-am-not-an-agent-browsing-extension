@@ -1,7 +1,9 @@
 const RELAY_URL = "http://localhost:18321";
 const POLL_INTERVAL_MS = 500;
+const KEEPALIVE_INTERVAL_MS = 20000;
 
 let polling = false;
+const activePorts = new Set();
 
 async function pollForCommand() {
   if (polling) return;
@@ -20,6 +22,20 @@ async function pollForCommand() {
     polling = false;
   }
 }
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "keepalive") {
+    activePorts.add(port);
+    port.onDisconnect.addListener(() => activePorts.delete(port));
+  }
+});
+
+chrome.alarms.create("poll", { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "poll") {
+    pollForCommand();
+  }
+});
 
 async function executeCommand(command) {
   const { id, action, params } = command;

@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Sec-CH-UA",
+          "operation": "set",
+          "value": "\"Chromium\";v=\"145\", \"Google Chrome\";v=\"145\", \"Not-A.Brand\";v=\"24\""
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*",
+      "resourceTypes": [
+        "main_frame", "sub_frame", "stylesheet", "script", "image",
+        "font", "object", "xmlhttprequest", "ping", "media",
+        "websocket", "webtransport", "webbundle", "other"
+      ]
+    }
+  }
+]

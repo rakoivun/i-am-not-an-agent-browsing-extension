@@ -1,3 +1,13 @@
+let keepalivePort = null;
+
+function connectKeepalive() {
+  keepalivePort = chrome.runtime.connect({ name: "keepalive" });
+  keepalivePort.onDisconnect.addListener(() => {
+    setTimeout(connectKeepalive, 1000);
+  });
+}
+connectKeepalive();
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   handleMessage(message).then(sendResponse);
   return true;
@@ -24,6 +34,8 @@ async function handleMessage(message) {
         return doScroll(params);
       case "get_text":
         return doGetText(params);
+      case "fingerprint":
+        return doFingerprint();
       case "ping":
         return { ok: true, url: window.location.href, title: document.title };
       default:
@@ -136,8 +148,28 @@ function doWait(params) {
   });
 }
 
+function doFingerprint() {
+  const brands = navigator.userAgentData
+    ? navigator.userAgentData.brands.map((b) => `${b.brand}/${b.version}`)
+    : null;
+  return {
+    ok: true,
+    webdriver: navigator.webdriver,
+    userAgent: navigator.userAgent,
+    brands,
+    platform: navigator.platform,
+    languages: navigator.languages,
+    cookieEnabled: navigator.cookieEnabled,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+  };
+}
+
 function doEvaluate(params) {
-  const fn = new Function(params.expression);
+  let expr = params.expression;
+  if (!expr.trimStart().startsWith("return ") && !expr.includes(";")) {
+    expr = "return " + expr;
+  }
+  const fn = new Function(expr);
   const result = fn();
   return { ok: true, result: result !== undefined ? String(result) : null };
 }

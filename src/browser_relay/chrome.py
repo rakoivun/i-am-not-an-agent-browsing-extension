@@ -1,5 +1,6 @@
 """Find and launch Chrome for Testing (or Playwright's Chromium) with extension loaded."""
 
+import json
 import os
 import platform
 import subprocess
@@ -74,6 +75,22 @@ def find_system_chrome() -> Path | None:
     return None
 
 
+def _clear_crash_flag():
+    """Mark the Chrome profile as cleanly exited to suppress restore prompts."""
+    prefs_path = PROFILE_DIR / "Default" / "Preferences"
+    if not prefs_path.exists():
+        return
+    try:
+        data = json.loads(prefs_path.read_text(encoding="utf-8"))
+        profile = data.get("profile", {})
+        profile["exit_type"] = "Normal"
+        profile["exited_cleanly"] = True
+        data["profile"] = profile
+        prefs_path.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def launch_chrome(extension_dir: Path, chrome_path: Path | None = None, url: str = "about:blank") -> subprocess.Popen:
     """Launch Chrome with the extension loaded. Returns the process handle."""
     if chrome_path is None:
@@ -85,12 +102,12 @@ def launch_chrome(extension_dir: Path, chrome_path: Path | None = None, url: str
         )
 
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    _clear_crash_flag()
 
     args = [
         str(chrome_path),
         f"--load-extension={extension_dir}",
         f"--user-data-dir={PROFILE_DIR}",
-        "--enable-extensions",
         "--no-first-run",
         "--no-default-browser-check",
         url,
