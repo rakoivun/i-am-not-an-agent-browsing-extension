@@ -3,6 +3,7 @@
 import json
 import shutil
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -44,10 +45,79 @@ def _print_result(data: dict):
         raise typer.Exit(1)
 
 
+def _wait_for_extension(timeout: float = 15.0) -> bool:
+    """Poll /status until the extension is connected or timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with httpx.Client(base_url=RELAY_URL, timeout=2.0) as client:
+                resp = client.get("/status")
+                if resp.status_code == 200 and resp.json().get("extension_connected"):
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return False
+
+
 @app.command()
-def install():
-    """Copy extension files to ~/.browser-relay/extension/ and print setup instructions."""
+def start(
+    host: str = typer.Option("127.0.0.1", help="Relay server host"),
+    port: int = typer.Option(18321, help="Relay server port"),
+    url: str = typer.Option("about:blank", help="Initial URL to open"),
+    system_chrome: bool = typer.Option(False, "--system-chrome", help="Use system Chrome (requires manual extension load)"),
+):
+    """Start relay server + launch Chrome with extension loaded. One command, zero clicks."""
+    from browser_relay.chrome import find_chrome_for_testing, find_system_chrome, launch_chrome
+
+    _install_extension()
+
+    if system_chrome:
+        chrome_path = find_system_chrome()
+        if not chrome_path:
+            typer.secho("System Chrome not found.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+        typer.echo(f"Using system Chrome: {chrome_path}")
+        typer.echo("NOTE: --load-extension is removed in Chrome 137+.")
+        typer.echo("If the extension doesn't load, use manual install: browser-relay install")
+    else:
+        chrome_path = find_chrome_for_testing()
+        if not chrome_path:
+            typer.secho("Chrome for Testing not found.", fg=typer.colors.RED, err=True)
+            typer.echo("Install it with: uv run playwright install chromium")
+            raise typer.Exit(1)
+        typer.echo(f"Using Chrome for Testing: {chrome_path}")
+
+    typer.echo(f"Starting relay server on {host}:{port}")
+    server_thread = threading.Thread(
+        target=_run_relay, args=(host, port), daemon=True
+    )
+    server_thread.start()
+    time.sleep(0.5)
+
+    typer.echo(f"Launching Chrome with extension...")
+    proc = launch_chrome(INSTALL_DIR, chrome_path=chrome_path, url=url)
+    typer.echo(f"Chrome PID: {proc.pid}")
+
+    typer.echo("Waiting for extension to connect...")
+    if _wait_for_extension():
+        typer.secho("Extension connected. Ready.", fg=typer.colors.GREEN)
+    else:
+        typer.secho("Extension did not connect within 15s. Check chrome://extensions", fg=typer.colors.YELLOW)
+
+    typer.echo("Press Ctrl+C to stop.")
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        typer.echo("Shutting down...")
+        proc.terminate()
+
+
+def _install_extension():
+    """Ensure extension files are in INSTALL_DIR."""
     if not EXTENSION_DIR.exists():
+        if INSTALL_DIR.exists() and (INSTALL_DIR / "manifest.json").exists():
+            return
         typer.secho(f"Extension source not found at {EXTENSION_DIR}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
@@ -56,15 +126,27 @@ def install():
         if f.is_file():
             shutil.copy2(f, INSTALL_DIR / f.name)
 
+
+def _run_relay(host: str, port: int):
+    """Run Flask relay in a thread."""
+    from browser_relay.relay.server import app as flask_app
+    flask_app.run(host=host, port=port, debug=False, use_reloader=False)
+
+
+@app.command()
+def install():
+    """Copy extension files to ~/.browser-relay/extension/ and print setup instructions."""
+    _install_extension()
     typer.echo(f"Extension installed to: {INSTALL_DIR}")
     typer.echo("")
-    typer.echo("To load it in Chrome (one-time):")
+    typer.echo("For automatic setup (recommended):")
+    typer.echo("  browser-relay start")
+    typer.echo("")
+    typer.echo("For manual setup with your own Chrome:")
     typer.echo("  1. Open chrome://extensions")
     typer.echo("  2. Enable 'Developer mode' (toggle top-right)")
     typer.echo("  3. Click 'Load unpacked'")
     typer.echo(f"  4. Select: {INSTALL_DIR}")
-    typer.echo("")
-    typer.echo("The extension persists across Chrome restarts.")
 
 
 @app.command()
@@ -72,11 +154,10 @@ def server(
     host: str = typer.Option("127.0.0.1", help="Host to bind the relay server"),
     port: int = typer.Option(18321, help="Port for the relay server"),
 ):
-    """Start the relay server."""
+    """Start only the relay server (without launching Chrome)."""
     typer.echo(f"Starting relay server on {host}:{port}")
     typer.echo("Press Ctrl+C to stop.")
-    from browser_relay.relay.server import run_server
-    run_server(host=host, port=port)
+    _run_relay(host=host, port=port)
 
 
 @app.command()
