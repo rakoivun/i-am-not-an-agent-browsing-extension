@@ -33,13 +33,15 @@ class TestInstall:
 
 
 class TestStatus:
-    def test_status_server_down(self):
+    def test_status_server_down(self, monkeypatch):
+        monkeypatch.setattr("browser_relay.cli.app.RELAY_URL", "http://127.0.0.1:19999")
         result = runner.invoke(app, ["status"])
         assert result.exit_code == 1
         assert "not running" in result.output
 
 
 class TestPing:
-    def test_ping_server_down(self):
+    def test_ping_server_down(self, monkeypatch):
+        monkeypatch.setattr("browser_relay.cli.app.RELAY_URL", "http://127.0.0.1:19999")
         result = runner.invoke(app, ["ping"])
         assert result.exit_code != 0
