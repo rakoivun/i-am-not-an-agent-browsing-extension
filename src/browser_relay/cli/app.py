@@ -1,5 +1,6 @@
 """CLI for browser-relay -- send commands to Chrome via the relay server."""
 
+import base64
 import json
 import shutil
 import sys
@@ -43,6 +44,13 @@ def _print_result(data: dict):
     else:
         typer.secho(f"Error: {data.get('error', 'unknown')}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
+
+
+def _target_params(selector_or_ref: str) -> dict:
+    """Map a selector/ref argument into relay params."""
+    if selector_or_ref.startswith("e") and selector_or_ref[1:].isdigit():
+        return {"ref": selector_or_ref}
+    return {"selector": selector_or_ref}
 
 
 def _wait_for_extension(timeout: float = 15.0) -> bool:
@@ -200,21 +208,23 @@ def navigate(
 
 @app.command()
 def click(
-    selector: str = typer.Argument(help="CSS selector of the element to click"),
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
 ):
     """Click an element on the page."""
-    result = _send_command("click", {"selector": selector})
+    result = _send_command("click", _target_params(selector_or_ref))
     _print_result(result)
 
 
 @app.command()
 def type_text(
-    selector: str = typer.Argument(help="CSS selector of the input element"),
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
     text: str = typer.Argument(help="Text to type"),
     clear: bool = typer.Option(False, "--clear", help="Clear field before typing"),
 ):
     """Type text into an input element."""
-    result = _send_command("type", {"selector": selector, "text": text, "clear": clear})
+    params = _target_params(selector_or_ref)
+    params.update({"text": text, "clear": clear})
+    result = _send_command("type", params)
     _print_result(result)
 
 
@@ -239,13 +249,13 @@ def evaluate(
 
 @app.command()
 def scroll(
-    selector: Optional[str] = typer.Option(None, help="CSS selector to scroll into view"),
+    selector_or_ref: Optional[str] = typer.Option(None, help="CSS selector or ref to scroll into view"),
     y: int = typer.Option(300, help="Pixels to scroll vertically (if no selector)"),
 ):
     """Scroll the page or an element into view."""
     params = {}
-    if selector:
-        params["selector"] = selector
+    if selector_or_ref:
+        params.update(_target_params(selector_or_ref))
     else:
         params["y"] = y
     result = _send_command("scroll", params)
@@ -254,10 +264,216 @@ def scroll(
 
 @app.command()
 def get_text(
-    selector: str = typer.Argument(help="CSS selector of the element"),
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
 ):
     """Get text content of an element."""
-    result = _send_command("get_text", {"selector": selector})
+    result = _send_command("get_text", _target_params(selector_or_ref))
+    _print_result(result)
+
+
+@app.command()
+def get_html(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+):
+    """Get HTML content of an element."""
+    result = _send_command("get_html", _target_params(selector_or_ref))
+    _print_result(result)
+
+
+@app.command()
+def get_attr(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+    name: str = typer.Argument(help="Attribute name"),
+):
+    """Get attribute value of an element."""
+    params = _target_params(selector_or_ref)
+    params["name"] = name
+    result = _send_command("get_attr", params)
+    _print_result(result)
+
+
+@app.command()
+def get_value(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+):
+    """Get form value of an element."""
+    result = _send_command("get_value", _target_params(selector_or_ref))
+    _print_result(result)
+
+
+@app.command()
+def count(
+    selector: str = typer.Argument(help="CSS selector to count"),
+):
+    """Count elements matching selector."""
+    result = _send_command("count", {"selector": selector})
+    _print_result(result)
+
+
+@app.command()
+def hover(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+):
+    """Hover on an element."""
+    result = _send_command("hover", _target_params(selector_or_ref))
+    _print_result(result)
+
+
+@app.command()
+def focus(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+):
+    """Focus an element."""
+    result = _send_command("focus", _target_params(selector_or_ref))
+    _print_result(result)
+
+
+@app.command()
+def press(
+    key: str = typer.Argument(help="Key to press, e.g. Enter, Escape, Tab"),
+    selector_or_ref: Optional[str] = typer.Option(None, "--target", help="Optional CSS selector or ref target"),
+):
+    """Press a keyboard key on the active element or a target element."""
+    params = {"key": key}
+    if selector_or_ref:
+        params.update(_target_params(selector_or_ref))
+    result = _send_command("press", params)
+    _print_result(result)
+
+
+@app.command()
+def dblclick(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+):
+    """Double-click an element."""
+    result = _send_command("dblclick", _target_params(selector_or_ref))
+    _print_result(result)
+
+
+@app.command()
+def check(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+):
+    """Check checkbox/radio element."""
+    result = _send_command("check", _target_params(selector_or_ref))
+    _print_result(result)
+
+
+@app.command()
+def uncheck(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+):
+    """Uncheck checkbox element."""
+    result = _send_command("uncheck", _target_params(selector_or_ref))
+    _print_result(result)
+
+
+@app.command()
+def select_option(
+    selector_or_ref: str = typer.Argument(help="CSS selector or snapshot ref (e.g. e3)"),
+    value: str = typer.Argument(help="Option value"),
+):
+    """Select dropdown option by value."""
+    params = _target_params(selector_or_ref)
+    params["value"] = value
+    result = _send_command("select", params)
+    _print_result(result)
+
+
+@app.command()
+def wait(
+    selector_or_ref: Optional[str] = typer.Argument(None, help="Optional selector/ref to wait for"),
+    ms: Optional[int] = typer.Option(None, "--ms", help="Sleep duration in milliseconds"),
+    timeout: float = typer.Option(10.0, "--timeout", help="Element wait timeout in seconds"),
+):
+    """Wait for milliseconds or until an element appears."""
+    if selector_or_ref:
+        params = _target_params(selector_or_ref)
+        params["timeout_ms"] = int(timeout * 1000)
+    else:
+        params = {"ms": ms or 1000}
+    result = _send_command("wait", params, timeout=max(timeout, 1.0) + 1.0)
+    _print_result(result)
+
+
+@app.command()
+def screenshot(
+    path: Optional[Path] = typer.Argument(None, help="Optional PNG output path"),
+):
+    """Capture screenshot of active tab."""
+    result = _send_command("screenshot")
+    _print_result({"ok": result.get("ok"), "captured": result.get("ok", False)})
+    if not result.get("ok"):
+        return
+    data_url = result.get("data_url")
+    if not data_url:
+        return
+    if path is None:
+        return
+    if "," not in data_url:
+        typer.secho("Invalid screenshot payload.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    _, b64_data = data_url.split(",", 1)
+    png_bytes = base64.b64decode(b64_data)
+    path.write_bytes(png_bytes)
+    typer.echo(f"Saved screenshot to: {path}")
+
+
+@app.command()
+def back():
+    """Navigate back in tab history."""
+    result = _send_command("back")
+    _print_result(result)
+
+
+@app.command()
+def forward():
+    """Navigate forward in tab history."""
+    result = _send_command("forward")
+    _print_result(result)
+
+
+@app.command()
+def reload():
+    """Reload the active tab."""
+    result = _send_command("reload")
+    _print_result(result)
+
+
+@app.command("tabs")
+def list_tabs():
+    """List tabs in the current browser window."""
+    result = _send_command("tabs")
+    _print_result(result)
+
+
+@app.command()
+def switch_tab(
+    tab_id: int = typer.Argument(help="Tab id to activate"),
+):
+    """Switch to another tab by id."""
+    result = _send_command("switch_tab", {"tab_id": tab_id})
+    _print_result(result)
+
+
+@app.command()
+def new_tab(
+    url: str = typer.Argument("about:blank", help="Optional URL for the new tab"),
+):
+    """Open a new tab."""
+    result = _send_command("new_tab", {"url": url})
+    _print_result(result)
+
+
+@app.command()
+def close_tab(
+    tab_id: Optional[int] = typer.Argument(None, help="Optional tab id. Defaults to active tab."),
+):
+    """Close tab by id or close active tab."""
+    params = {}
+    if tab_id is not None:
+        params["tab_id"] = tab_id
+    result = _send_command("close_tab", params)
     _print_result(result)
 
 

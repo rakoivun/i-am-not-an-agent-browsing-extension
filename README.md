@@ -91,12 +91,32 @@ start, and use the tool without human intervention.
 |---------|-------------|
 | `browser-relay start` | Start relay + launch Chrome with extension |
 | `browser-relay navigate <url>` | Navigate active tab |
-| `browser-relay snapshot` | Get interactive DOM elements (JSON) |
-| `browser-relay click <selector>` | Click element by CSS selector |
-| `browser-relay type-text <selector> <text>` | Type into input field |
-| `browser-relay get-text <selector>` | Read text content of element |
+| `browser-relay snapshot` | Get interactive DOM elements with refs (`e0`, `e1`, ...) |
+| `browser-relay click <selector-or-ref>` | Click by CSS selector or snapshot ref |
+| `browser-relay type-text <selector-or-ref> <text>` | Type into input field |
+| `browser-relay get-text <selector-or-ref>` | Read text content of element |
+| `browser-relay get-html <selector-or-ref>` | Read inner HTML of element |
+| `browser-relay get-attr <selector-or-ref> <name>` | Read attribute value |
+| `browser-relay get-value <selector-or-ref>` | Read form value |
+| `browser-relay count <selector>` | Count elements matching selector |
+| `browser-relay hover <selector-or-ref>` | Hover over element |
+| `browser-relay focus <selector-or-ref>` | Focus element |
+| `browser-relay press <key> [--target <selector-or-ref>]` | Dispatch keyboard key events |
+| `browser-relay dblclick <selector-or-ref>` | Double-click element |
+| `browser-relay check <selector-or-ref>` | Check checkbox/radio element |
+| `browser-relay uncheck <selector-or-ref>` | Uncheck checkbox/radio element |
+| `browser-relay select-option <selector-or-ref> <value>` | Select option value |
+| `browser-relay wait [selector-or-ref]` | Wait by sleep or until element appears |
 | `browser-relay evaluate <js>` | Run JavaScript on page |
 | `browser-relay scroll` | Scroll page or element into view |
+| `browser-relay screenshot [path]` | Capture active tab screenshot |
+| `browser-relay back` | Navigate back |
+| `browser-relay forward` | Navigate forward |
+| `browser-relay reload` | Reload active tab |
+| `browser-relay tabs` | List tabs in current window |
+| `browser-relay switch-tab <id>` | Switch active tab |
+| `browser-relay new-tab [url]` | Open a new tab |
+| `browser-relay close-tab [id]` | Close tab by id or active tab |
 | `browser-relay ping` | Check extension is alive |
 | `browser-relay status` | Check relay + extension connectivity |
 | `browser-relay install` | Copy extension files (for manual Chrome setup) |
@@ -120,8 +140,11 @@ curl http://localhost:18321/result?timeout=10
 curl http://localhost:18321/status
 ```
 
-Actions: `navigate`, `click`, `type`, `snapshot`, `scroll`, `get_text`,
-`evaluate`, `wait`, `select`, `ping`, `fingerprint`, `tab_info`.
+Actions: `navigate`, `back`, `forward`, `reload`, `tabs`, `new_tab`,
+`switch_tab`, `close_tab`, `screenshot`, `click`, `dblclick`, `hover`,
+`focus`, `type`, `select`, `check`, `uncheck`, `snapshot`, `scroll`,
+`get_text`, `get_html`, `get_attr`, `get_value`, `count`, `evaluate`,
+`wait`, `ping`, `fingerprint`, `tab_info`.
 
 ## Architecture
 
@@ -150,7 +173,7 @@ select `~/.browser-relay/extension/`. One-time step, persists across restarts.
 ## Tests
 
 ```bash
-uv run pytest -v    # 44 tests
+uv run pytest -v    # 52 tests
 ```
 
 Bug policy: every bug gets a failing test first, then the fix. See
