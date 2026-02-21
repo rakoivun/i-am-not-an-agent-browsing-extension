@@ -109,6 +109,13 @@ class TestStealthJs:
     def test_sets_prototype_to_navigator_ua_data(self, stealth_src):
         assert "NavigatorUAData.prototype" in stealth_src
 
+    def test_spoofs_tostring_to_native_code(self, stealth_src):
+        assert "native code" in stealth_src
+        assert "toString" in stealth_src
+
+    def test_spoofs_getter_descriptor(self, stealth_src):
+        assert "getOwnPropertyDescriptor" in stealth_src
+
 
 class TestChromeLauncher:
     def test_no_detectable_flags_in_launch_args(self):
