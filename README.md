@@ -1,168 +1,99 @@
-# browser-relay
+# i-am-not-an-agent-browsing-extension
 
-Undetectable LLM-orchestrated browser automation via Chrome extension relay.
+Browser automation that websites cannot detect.
 
-Zero-click setup. No CDP, no WebDriver, no Playwright at runtime.
-Websites cannot detect this.
+A Chrome extension + local relay server that lets CLIs and LLMs control the browser through standard HTTP -- no CDP, no WebDriver, no Playwright at runtime. Passes Facebook, LinkedIn, and Instagram bot detection.
 
-## How It Works
+## How it works
 
 ```
-CLI (Typer)  -->  Relay Server (Flask, localhost:18321)  <--  Chrome Extension (polling)
+Your CLI / LLM        Relay Server (localhost:18321)        Chrome Extension
+     |                        |                                   |
+     +-- POST /command -----> +                                   |
+                              +--- GET /command (polling) ------> +
+                              |                                   |
+                              |   (extension executes action      |
+                              |    in the page via content script) |
+                              |                                   |
+                              + <-- POST /result ---------------- +
+     + <-- GET /result ------ +
 ```
 
-1. The relay server queues commands from the CLI.
-2. A Chrome extension polls the relay every 500ms for pending commands.
-3. The extension executes commands in the page (click, type, snapshot, etc.) via a content script.
-4. Results flow back through the relay to the CLI.
+No automation protocol touches the browser. The extension uses `fetch()` to localhost, same as any other extension.
 
-No automation protocol is involved at runtime. The extension uses standard
-`fetch()` to localhost, indistinguishable from any other Chrome extension.
-
-## Quick Start
+## Quick start
 
 ```bash
-# One command -- starts relay server + launches Chrome with extension loaded
-browser-relay start
-```
+git clone https://github.com/rakoivun/i-am-not-an-agent-browsing-extension.git
+cd i-am-not-an-agent-browsing-extension
 
-That's it. Chrome opens with the extension already active. No manual steps.
-
-### What `start` does under the hood
-
-1. Copies extension files to `~/.browser-relay/extension/`
-2. Starts the Flask relay server on `localhost:18321`
-3. Launches **Chrome for Testing** (Playwright's Chromium) with `--load-extension`
-4. Waits for the extension to connect (polls `/status`)
-
-Chrome for Testing is an official Google build from the same source code and
-CI pipeline as regular Chrome. It has identical TLS fingerprint, user agent,
-and behavior. The only difference: it keeps `--load-extension` enabled
-(removed from branded Chrome in v137, May 2025).
-
-### Prerequisites
-
-Chrome for Testing must be available on the machine. The easiest way:
-
-```bash
+# Install (requires uv + Playwright Chromium)
+uv sync
 uv run playwright install chromium
+
+# Launch -- starts relay server + Chrome with extension auto-loaded
+uv run browser-relay start
+
+# In another terminal:
+uv run browser-relay navigate "https://example.com"
+uv run browser-relay snapshot
+uv run browser-relay click "#some-button"
+uv run browser-relay type-text "#email" "hello@example.com" --clear
 ```
 
-This downloads Chrome for Testing to `~/.cache/ms-playwright/` (Linux/Mac)
-or `%LOCALAPPDATA%\ms-playwright\` (Windows). `browser-relay start`
-auto-discovers it.
+One command, zero clicks. Chrome for Testing opens with the extension already active.
 
-### Alternative: use your own system Chrome
+## Commands
 
-For maximum stealth (identical TLS at the transport layer), you can load
-the extension into your own Chrome manually:
+| Command | What it does |
+|---------|-------------|
+| `browser-relay start` | Start relay + launch Chrome with extension |
+| `browser-relay navigate <url>` | Navigate active tab |
+| `browser-relay snapshot` | Get interactive DOM elements (JSON) |
+| `browser-relay click <selector>` | Click element by CSS selector |
+| `browser-relay type-text <selector> <text>` | Type into input field |
+| `browser-relay get-text <selector>` | Read text content of element |
+| `browser-relay evaluate <js>` | Run JavaScript on page |
+| `browser-relay scroll` | Scroll page or element into view |
+| `browser-relay ping` | Check extension is alive |
+| `browser-relay status` | Check relay + extension connectivity |
+| `browser-relay install` | Copy extension files (for manual Chrome setup) |
+| `browser-relay server` | Start relay only (no Chrome launch) |
+
+## Why it is undetectable
+
+| Detection vector | Status |
+|-----------------|--------|
+| `navigator.webdriver` | `false` -- no automation protocol attached |
+| `Sec-CH-UA` header | Includes "Google Chrome" (overridden via `declarativeNetRequest`) |
+| `navigator.userAgentData.brands` | Includes "Google Chrome" (patched at `document_start` in MAIN world) |
+| User agent string | Standard `Chrome/145.0.0.0` |
+| TLS fingerprint | Identical to Chrome (same BoringSSL, same binary) |
+| Chrome flags | Only `--load-extension` and `--user-data-dir` (not detectable) |
+| CDP / DevTools | Not connected |
+
+### What is stealth hardening?
+
+The extension includes a `stealth.js` script that runs in the page's JavaScript world **before any page scripts execute**. It patches `navigator.userAgentData.brands` to include "Google Chrome" (Chrome for Testing only reports "Chromium" by default). A `declarativeNetRequest` rule does the same for the `Sec-CH-UA` HTTP header. Together, these make the browser indistinguishable from stock Google Chrome at both the JavaScript and network layers.
+
+## Architecture
+
+- **`extension/`** -- Manifest V3 Chrome extension. Background service worker polls the relay for commands. Content script executes DOM actions (click, type, snapshot). Stealth script patches fingerprints.
+- **`src/browser_relay/relay/`** -- Flask server with in-memory command/result queue. Five endpoints: `POST/GET /command`, `POST/GET /result`, `GET /status`.
+- **`src/browser_relay/cli/`** -- Typer CLI. `start` command handles everything: extension install, relay server, Chrome launch, connectivity check.
+- **`src/browser_relay/chrome.py`** -- Finds Chrome for Testing (Playwright's Chromium) or system Chrome. Launches with clean flags and patched profile.
+
+## Alternative: use your own Chrome
+
+For absolute stealth (your own TLS stack), load the extension manually:
 
 ```bash
-browser-relay install    # copies extension to ~/.browser-relay/extension/
-browser-relay server     # starts relay only (no Chrome launch)
+uv run browser-relay install   # copies extension to ~/.browser-relay/extension/
+uv run browser-relay server    # starts relay only
 ```
 
-Then one-time in Chrome:
-1. Open `chrome://extensions`
-2. Enable **Developer mode** (toggle, top-right)
-3. Click **Load unpacked**
-4. Select `~/.browser-relay/extension/`
+Then in Chrome: `chrome://extensions` > Developer mode > Load unpacked > select `~/.browser-relay/extension/`. One-time step, persists across restarts.
 
-The extension persists across Chrome restarts. After the one-time load,
-just run `browser-relay server` in the future.
+## License
 
-## Usage
-
-```bash
-# Check connectivity (server + extension)
-browser-relay status
-
-# Navigate the active tab
-browser-relay navigate "https://example.com"
-
-# Get interactive elements on the page
-browser-relay snapshot
-
-# Click an element by CSS selector
-browser-relay click "#login-button"
-
-# Type into a field (--clear to empty it first)
-browser-relay type-text "#email" "user@example.com" --clear
-
-# Get text content of an element
-browser-relay get-text "#result"
-
-# Evaluate JavaScript on the page
-browser-relay evaluate "document.title"
-
-# Scroll to an element or by pixels
-browser-relay scroll --selector "#section-2"
-browser-relay scroll --y 500
-
-# Ping the extension (check it is alive on the current page)
-browser-relay ping
-```
-
-## Why It Is Undetectable
-
-| Signal | Status |
-|--------|--------|
-| TLS fingerprint (JA3/JA4) | Identical to Chrome (same binary, same BoringSSL) |
-| User agent | Identical to Chrome |
-| `navigator.webdriver` | `false` (no automation protocol attached) |
-| CDP / DevTools artifacts | None (no CDP connection) |
-| WebDriver protocol | Not used |
-| Extension visibility | Standard MV3 extension, same as millions of others |
-
-### Background: why not Playwright/Selenium/CDP directly?
-
-- Playwright and Selenium attach automation protocols (CDP/WebDriver) that
-  set `navigator.webdriver = true` and leave detectable artifacts.
-- Chrome removed `--load-extension` from branded builds in v137 (May 2025)
-  to prevent malware abuse.
-- Chrome 136+ blocks `--remote-debugging-port` and `--remote-debugging-pipe`
-  on the default user profile.
-- Chrome for Testing is Google's recommended path for browser automation.
-  It is the same Chrome, without auto-update, with automation flags intact.
-
-browser-relay sidesteps all of this: it launches Chrome for Testing as a
-normal browser (no automation protocol), loads the extension via
-`--load-extension`, and communicates entirely through HTTP polling. The
-result is a browser that websites cannot distinguish from a human user.
-
-## File Structure
-
-```
-browser-relay/
-  extension/
-    manifest.json       # MV3 Chrome extension manifest
-    background.js       # Service worker: polls relay, dispatches commands
-    content.js          # Content script: executes DOM actions on page
-  src/browser_relay/
-    __init__.py
-    chrome.py           # Chrome for Testing discovery and launch
-    relay/
-      __init__.py
-      server.py         # Flask relay server (command/result queue)
-    cli/
-      __init__.py
-      app.py            # Typer CLI (start, install, server, navigate, etc.)
-  tests/
-    test_relay.py       # Relay server endpoint tests
-    test_cli.py         # CLI command tests
-  pyproject.toml
-  README.md
-```
-
-## Development
-
-```bash
-# Install with dev dependencies
-uv sync --all-extras
-
-# Run tests
-uv run pytest -v
-
-# Run a single test
-uv run pytest tests/test_relay.py::TestFullCycle -v
-```
+MIT
